@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Praça Dom João I — Porto</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="c"></canvas>
+      <div id="overlay">
+        <div class="panel">
+          <h1>Praça Dom João I</h1>
+          <p class="sub">Porto · first-person walkaround</p>
+          <p id="status">Loading map data…</p>
+          <button id="start" disabled>Click to walk</button>
+          <ul class="hints">
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</li>
+            <li>Mouse look · <kbd>Esc</kbd> release</li>
+            <li><kbd>Shift</kbd> run</li>
+          </ul>
+        </div>
+      </div>
+      <div id="hud" hidden>
+        <div id="crosshair"></div>
+        <div id="street-label"></div>
+        <div id="minimap"><canvas id="minimap-c" width="160" height="160"></canvas></div>
+      </div>
+      <div id="attribution">
+        © OpenStreetMap contributors · Imagery © Esri
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
