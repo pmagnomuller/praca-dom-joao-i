@@ -4,8 +4,8 @@ export const ORIGIN = {
   lon: -8.608955,
 } as const
 
-/** Half-side of the square fetch bbox in meters (~500 m → ~1 km across) */
-export const MAP_RADIUS_M = 550
+/** Half-side of the square fetch bbox in meters — keep tight so the praça is readable */
+export const MAP_RADIUS_M = 110
 
 /** Eye height while walking */
 export const EYE_HEIGHT = 1.7

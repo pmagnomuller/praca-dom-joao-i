@@ -20,6 +20,7 @@ export class Player {
 
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     this.camera = camera
+    this.camera.rotation.order = 'YXZ'
     this.controls = new PointerLockControls(camera, domElement)
     this.spawnAt(PLAZA_SPAWN.x, PLAZA_SPAWN.z, PLAZA_SPAWN.yaw, PLAZA_SPAWN.pitch)
 
@@ -58,7 +59,8 @@ export class Player {
 
   spawnAt(x: number, z: number, yaw = 0, pitch = 0): void {
     this.camera.position.set(x, groundY(x, z) + EYE_HEIGHT, z)
-    this.camera.rotation.set(pitch, yaw, 0)
+    // YXZ: yaw around Y, then pitch around X (PointerLock-compatible)
+    this.camera.rotation.set(pitch, yaw, 0, 'YXZ')
   }
 
   lock(): void {

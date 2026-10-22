@@ -3,23 +3,13 @@ import {
   DEFAULT_LEVEL_HEIGHT,
   DEFAULT_LEVELS,
   LANDMARK_HEIGHTS,
+  MAP_RADIUS_M,
   MAX_BUILDING_HEIGHT,
 } from './config'
 import type { BuildingFeature, Vec2 } from './overpass'
-import { STREET_Y, plazaInterior } from './plaza'
+import { DECK, STREET_Y, plazaInterior } from './plaza'
 
-const PORTO_PALETTE = [
-  0xe8dcc8, // warm plaster
-  0xd4c4a8,
-  0xc9b89a,
-  0xb8a88c,
-  0xa89078, // granite-ish
-  0x8f7a66,
-  0xd8c8b0,
-  0xf0e6d8, // white azulejo-adjacent
-  0xc4a484,
-  0x9e8b7a,
-]
+const PALETTE = [0xcfc4b0, 0xc0b4a0, 0xb8a890, 0xa89880, 0xd4c8b4, 0xe8e0d4]
 
 function hashId(id: number): number {
   let h = id | 0
@@ -49,65 +39,13 @@ function shapeFromRing(ring: Vec2[]): THREE.Shape {
   return shape
 }
 
-/** Canvas window-grid facade texture */
-function makeFacadeTexture(seed: number, levels: number): THREE.CanvasTexture {
-  const w = 128
-  const h = Math.max(64, Math.min(256, levels * 24))
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')!
-
-  const base = PORTO_PALETTE[seed % PORTO_PALETTE.length]
-  const r = (base >> 16) & 255
-  const g = (base >> 8) & 255
-  const b = base & 255
-  ctx.fillStyle = `rgb(${r},${g},${b})`
-  ctx.fillRect(0, 0, w, h)
-
-  // Granite base band
-  ctx.fillStyle = `rgb(${Math.max(0, r - 40)},${Math.max(0, g - 35)},${Math.max(0, b - 30)})`
-  ctx.fillRect(0, h - h * 0.12, w, h * 0.12)
-
-  const cols = 4 + (seed % 3)
-  const rows = Math.max(2, levels)
-  const marginX = 10
-  const marginY = 8
-  const cellW = (w - marginX * 2) / cols
-  const cellH = (h * 0.82) / rows
-
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const wx = marginX + col * cellW + cellW * 0.18
-      const wy = marginY + row * cellH + cellH * 0.2
-      const ww = cellW * 0.55
-      const wh = cellH * 0.55
-      const lit = (seed + row * 7 + col * 3) % 5 === 0
-      ctx.fillStyle = lit ? 'rgba(255, 230, 180, 0.85)' : 'rgba(40, 55, 75, 0.75)'
-      ctx.fillRect(wx, wy, ww, wh)
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)'
-      ctx.lineWidth = 1
-      ctx.strokeRect(wx, wy, ww, wh)
-    }
-  }
-
-  // Cornice
-  ctx.fillStyle = `rgba(255,255,255,0.2)`
-  ctx.fillRect(0, 0, w, 4)
-
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.wrapS = THREE.RepeatWrapping
-  tex.wrapT = THREE.ClampToEdgeWrapping
-  tex.repeat.set(2, 1)
-  return tex
-}
-
 export type BuildingColliders = {
-  /** Axis-aligned boxes in XZ for simple collision */
   boxes: { minX: number; maxX: number; minZ: number; maxZ: number }[]
 }
 
+/**
+ * Flat-color OSM extrusions only — no window grids. Cull far / deck-overlapping.
+ */
 export function createBuildings(
   scene: THREE.Scene,
   buildings: BuildingFeature[],
@@ -116,16 +54,9 @@ export function createBuildings(
   group.name = 'buildings'
   const boxes: BuildingColliders['boxes'] = []
 
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: 0x6b5344,
-    roughness: 0.9,
-    metalness: 0.05,
-  })
-
   for (const b of buildings) {
     if (b.footprint.length < 4) continue
 
-    // Skip tiny footprints (statues, kiosks, mapping noise)
     let minX0 = Infinity,
       maxX0 = -Infinity,
       minZ0 = Infinity,
@@ -136,20 +67,30 @@ export function createBuildings(
       minZ0 = Math.min(minZ0, p.z)
       maxZ0 = Math.max(maxZ0, p.z)
     }
-    if (maxX0 - minX0 < 3 || maxZ0 - minZ0 < 3) continue
+    if (maxX0 - minX0 < 4 || maxZ0 - minZ0 < 4) continue
 
-    // Skip footprints wholly inside the sunken deck (we dress landmarks separately)
-    const cx0 = (minX0 + maxX0) / 2
-    const cz0 = (minZ0 + maxZ0) / 2
-    if (plazaInterior(cx0, cz0) > 0.5) continue
+    const cx = (minX0 + maxX0) / 2
+    const cz = (minZ0 + maxZ0) / 2
+    if (Math.hypot(cx, cz) > MAP_RADIUS_M) continue
+    if (plazaInterior(cx, cz)) continue
+
+    // Skip footprints that heavily overlap the sunken deck
+    if (
+      minX0 < DECK.x1 &&
+      maxX0 > DECK.x0 &&
+      minZ0 < DECK.z1 &&
+      maxZ0 > DECK.z0
+    ) {
+      const overlapX = Math.min(maxX0, DECK.x1) - Math.max(minX0, DECK.x0)
+      const overlapZ = Math.min(maxZ0, DECK.z1) - Math.max(minZ0, DECK.z0)
+      if (overlapX > 8 && overlapZ > 8) continue
+    }
 
     const height = resolveHeight(b)
-    const levels = Math.max(2, Math.round(height / DEFAULT_LEVEL_HEIGHT))
     const seed = hashId(b.id)
-    const facadeTex = makeFacadeTexture(seed, levels)
     const wallMat = new THREE.MeshStandardMaterial({
-      map: facadeTex,
-      roughness: 0.85,
+      color: PALETTE[seed % PALETTE.length],
+      roughness: 0.88,
       metalness: 0.02,
     })
 
@@ -172,45 +113,18 @@ export function createBuildings(
         depth: height,
         bevelEnabled: false,
       })
-      // ExtrudeGeometry extrudes along +Z in shape space; we built shape in (x, -z)
-      // Rotate so extrusion goes up Y
       geo.rotateX(-Math.PI / 2)
-
-      let minX = Infinity,
-        maxX = -Infinity,
-        minZ = Infinity,
-        maxZ = -Infinity
-      for (const p of b.footprint) {
-        minX = Math.min(minX, p.x)
-        maxX = Math.max(maxX, p.x)
-        minZ = Math.min(minZ, p.z)
-        maxZ = Math.max(maxZ, p.z)
-      }
-      const cx = (minX + maxX) / 2
-      const cz = (minZ + maxZ) / 2
-      const near = Math.hypot(cx, cz) < 180
 
       const mesh = new THREE.Mesh(geo, wallMat)
       mesh.position.y = STREET_Y
-      mesh.castShadow = near
-      mesh.receiveShadow = near
+      mesh.castShadow = Math.hypot(cx, cz) < 100
+      mesh.receiveShadow = true
       mesh.userData.name = b.name
       group.add(mesh)
 
-      boxes.push({ minX, maxX, minZ, maxZ })
-
-      if (near && maxX - minX > 4 && maxZ - minZ > 4) {
-        const roof = new THREE.Mesh(
-          new THREE.PlaneGeometry(maxX - minX - 0.4, maxZ - minZ - 0.4),
-          roofMat,
-        )
-        roof.rotation.x = -Math.PI / 2
-        roof.position.set(cx, STREET_Y + height + 0.05, cz)
-        roof.receiveShadow = true
-        group.add(roof)
-      }
+      boxes.push({ minX: minX0, maxX: maxX0, minZ: minZ0, maxZ: maxZ0 })
     } catch {
-      // Skip degenerate footprints
+      // skip
     }
   }
 

@@ -1,166 +1,203 @@
 /**
- * Sunken flat granite deck + raised street rim.
- * Coords match this repo: +X east, +Z south (looking −Z faces north).
- * Ported from praca-joao-i-simulation (Origin), with Z flipped.
+ * Praça Dom João I levels (real layout):
+ * - Flat granite deck in the middle
+ * - North (Millennium) raised high
+ * - South (Tubitek) low — almost plaza height
+ * - Stairs on east & west sides down into the flat praça
+ *
+ * Coords: +X east, +Z south (look −Z = north).
  */
 import * as THREE from 'three'
 
 export const PLAZA_Y = 0
-export const STREET_Y = 2.8
+/** Tubitek / south frontage — lower than Millennium */
+export const SOUTH_Y = 0.35
+/** Millennium / Atlântico north ledge */
+export const NORTH_Y = 2.8
+/** East & west sidewalks (match the high north rim) */
+export const SIDE_Y = 2.8
 
-/** Axis-aligned sunken deck (world XZ). Outside = raised rim. */
+/** @deprecated use NORTH_Y or SOUTH_Y */
+export const STREET_Y = NORTH_Y
+
 export const DECK = {
-  x0: -18,
-  x1: 17,
-  /** North lip (smaller Z — toward Millennium) */
-  z0: -12,
-  /** South lip (larger Z — spawn side) */
-  z1: 28,
+  x0: -28,
+  x1: 26,
+  z0: -18, // north lip under Millennium
+  z1: 16, // south lip toward Tubitek
 }
 
-export const PLAZA_SPAWN = { x: 2, z: 34, yaw: 0, pitch: 0.18 }
+/** South (Tubitek) side, looking north across the flat deck at Millennium. */
+export const PLAZA_SPAWN = { x: 2, z: 22, yaw: 0, pitch: 0.12 }
 
+/** Corcéis on the high north rim, flanking Atlântico. */
 export const CORCELS = [
-  { x: -12, z: 28.5 },
-  { x: 13, z: 28.3 },
+  { x: -22, z: -19.5 },
+  { x: 20, z: -19.5 },
 ]
 
-const STAIRS = [
-  { x: -12, z: 27.5, dx: 0, dz: -1, width: 7 },
-  { x: 13, z: 27.5, dx: 0, dz: -1, width: 7 },
+type StairRun = {
+  x: number
+  z: number
+  dx: number
+  dz: number
+  width: number
+  run: number
+  topY: number
+}
+
+/** Stairs only on the sides (E/W), from high sidewalk down to flat praça. */
+const STAIRS: StairRun[] = [
+  { x: -28, z: -2, dx: 1, dz: 0, width: 9, run: 7, topY: SIDE_Y },
+  { x: 26, z: -2, dx: -1, dz: 0, width: 9, run: 7, topY: SIDE_Y },
 ]
 
-export function plazaInterior(x: number, z: number): number {
-  return x > DECK.x0 && x < DECK.x1 && z > DECK.z0 && z < DECK.z1 ? 1 : 0
+export function plazaInterior(x: number, z: number): boolean {
+  return x > DECK.x0 && x < DECK.x1 && z > DECK.z0 && z < DECK.z1
 }
 
-export function groundY(x: number, z: number): number {
-  return plazaInterior(x, z) > 0.5 ? PLAZA_Y : STREET_Y
-}
-
-function orientBox(
-  w: number,
-  h: number,
-  d: number,
-  x: number,
-  y: number,
-  z: number,
-  dx: number,
-  dz: number,
-): THREE.Mesh {
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.72 }),
+export function overDeckPad(x: number, z: number): boolean {
+  return (
+    x > DECK.x0 - 16 &&
+    x < DECK.x1 + 16 &&
+    z > DECK.z0 - 16 &&
+    z < DECK.z1 + 16
   )
-  mesh.position.set(x, y, z)
-  const len = Math.hypot(dx, dz) || 1
-  mesh.lookAt(x + dx / len, y, z + dz / len)
-  mesh.castShadow = true
-  mesh.receiveShadow = true
-  return mesh
 }
 
-/** Cut aerial tiles that cover the sunken deck so the hole is visible. */
 export function openAerialOverDeck(aerial: THREE.Group): void {
   const remove: THREE.Object3D[] = []
   aerial.traverse((obj: THREE.Object3D) => {
     const mesh = obj as THREE.Mesh
     if (!mesh.isMesh) return
-    const p = mesh.position
-    if (plazaInterior(p.x, p.z) > 0.5) remove.push(mesh)
+    if (overDeckPad(mesh.position.x, mesh.position.z)) remove.push(mesh)
   })
-  for (const m of remove) {
-    m.parent?.remove(m)
-    const mesh = m as THREE.Mesh
-    mesh.geometry?.dispose()
-    const mat = mesh.material
-    if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
-    else mat?.dispose()
-  }
+  for (const m of remove) m.parent?.remove(m)
 }
 
 /**
- * Flat granite floor, retaining walls, stairs L/R, bollards on the south rim.
+ * Outside the deck: south = low, north/east/west = high.
+ * On stairs: interpolate from side height down to plaza.
  */
+export function groundY(x: number, z: number): number {
+  for (const s of STAIRS) {
+    const len = Math.hypot(s.dx, s.dz) || 1
+    const ux = s.dx / len
+    const uz = s.dz / len
+    const along = (x - s.x) * ux + (z - s.z) * uz
+    if (along < -0.25 || along > s.run + 0.25) continue
+    const px = s.x + ux * along
+    const pz = s.z + uz * along
+    if (Math.hypot(x - px, z - pz) > s.width * 0.55) continue
+    const t = Math.min(1, Math.max(0, along / s.run))
+    return s.topY + (PLAZA_Y - s.topY) * t
+  }
+
+  if (plazaInterior(x, z)) return PLAZA_Y
+
+  // South of deck → Tubitek level (low)
+  if (z >= DECK.z1) return SOUTH_Y
+  // North of deck → Millennium ledge (high)
+  if (z <= DECK.z0) return NORTH_Y
+  // East / west of deck → high side streets
+  return SIDE_Y
+}
+
 export function createSunkenPlaza(scene: THREE.Scene): THREE.Group {
   const group = new THREE.Group()
   group.name = 'sunken-plaza'
 
-  const granite = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.72 })
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.8 })
-  const iron = new THREE.MeshStandardMaterial({
-    color: 0x1a1c1f,
-    roughness: 0.4,
-    metalness: 0.65,
-  })
+  const granite = new THREE.MeshStandardMaterial({ color: 0xe6e1d6, roughness: 0.75 })
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xd2cdc4, roughness: 0.85 })
+  const streetHi = new THREE.MeshStandardMaterial({ color: 0xa8a298, roughness: 0.92 })
+  const streetLo = new THREE.MeshStandardMaterial({ color: 0xb5aea2, roughness: 0.92 })
 
-  const rise = STREET_Y - PLAZA_Y
   const { x0, x1, z0, z1 } = DECK
   const cx = (x0 + x1) / 2
   const cz = (z0 + z1) / 2
-  const wallT = 0.7
+  const deckW = x1 - x0
+  const deckD = z1 - z0
+  const rimPad = 36
 
-  // Flat sunken granite
-  const deck = new THREE.Mesh(
-    new THREE.PlaneGeometry(x1 - x0, z1 - z0),
-    granite,
-  )
+  // —— Flat praça ——
+  const deck = new THREE.Mesh(new THREE.PlaneGeometry(deckW, deckD), granite)
   deck.rotation.x = -Math.PI / 2
-  deck.position.set(cx, PLAZA_Y + 0.02, cz)
+  deck.position.set(cx, PLAZA_Y, cz)
   deck.receiveShadow = true
   group.add(deck)
 
-  const addWall = (w: number, d: number, x: number, z: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, rise, d), wallMat)
-    mesh.position.set(x, PLAZA_Y + rise / 2, z)
-    mesh.castShadow = true
-    mesh.receiveShadow = true
-    group.add(mesh)
+  const slab = (
+    w: number,
+    d: number,
+    x: number,
+    y: number,
+    z: number,
+    mat: THREE.Material,
+  ) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.14, d), mat)
+    m.position.set(x, y - 0.07, z)
+    m.receiveShadow = true
+    group.add(m)
   }
 
-  // North (Millennium), east, west — solid; south has stair gaps
-  addWall(x1 - x0, wallT, cx, z0) // north
-  addWall(wallT, z1 - z0, x0, cz) // west
-  addWall(wallT, z1 - z0, x1, cz) // east
-  addWall(14, wallT, cx, z1) // south center
-  addWall(5, wallT, x0 + 2.5, z1)
-  addWall(5, wallT, x1 - 2.5, z1)
+  // North rim — high (Millennium)
+  slab(deckW + rimPad * 2, rimPad, cx, NORTH_Y, z0 - rimPad / 2, streetHi)
+  // South rim — low (Tubitek)
+  slab(deckW + rimPad * 2, rimPad, cx, SOUTH_Y, z1 + rimPad / 2, streetLo)
+  // West / east — high, with stairs into the plaza
+  slab(rimPad, deckD, x0 - rimPad / 2, SIDE_Y, cz, streetHi)
+  slab(rimPad, deckD, x1 + rimPad / 2, SIDE_Y, cz, streetHi)
 
-  // Ledge under Millennium (north of deck)
-  const ledge = new THREE.Mesh(
-    new THREE.BoxGeometry(x1 - x0 + 10, 0.18, 16),
-    granite,
-  )
-  ledge.position.set(cx + 3, STREET_Y + 0.08, z0 - 8)
-  ledge.receiveShadow = true
-  group.add(ledge)
+  const wall = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat)
+    m.position.set(x, y + h / 2, z)
+    m.castShadow = true
+    m.receiveShadow = true
+    group.add(m)
+  }
 
-  // Stairs into the plaza (from south rim, stepping north = −Z)
-  const steps = Math.max(14, Math.round(rise / 0.14))
-  for (const run of STAIRS) {
+  // North retaining wall under Millennium (full drop)
+  wall(deckW, NORTH_Y - PLAZA_Y, 0.55, cx, PLAZA_Y, z0)
+
+  // South: only a low curb — Tubitek side is nearly plaza level
+  wall(deckW, Math.max(0.2, SOUTH_Y - PLAZA_Y), 0.4, cx, PLAZA_Y, z1)
+
+  // East / west retaining walls with gap for stairs (centered near z=-2)
+  const gap = 11
+  const northLen = Math.max(4, -2 - gap / 2 - z0)
+  const southLen = Math.max(4, z1 - (-2 + gap / 2))
+  const t = 0.5
+  // West
+  wall(t, SIDE_Y - PLAZA_Y, northLen, x0, PLAZA_Y, z0 + northLen / 2)
+  wall(t, SIDE_Y - PLAZA_Y, southLen, x0, PLAZA_Y, z1 - southLen / 2)
+  // East
+  wall(t, SIDE_Y - PLAZA_Y, northLen, x1, PLAZA_Y, z0 + northLen / 2)
+  wall(t, SIDE_Y - PLAZA_Y, southLen, x1, PLAZA_Y, z1 - southLen / 2)
+
+  // Side stairs: high sidewalk → flat praça
+  for (const s of STAIRS) {
+    const rise = s.topY - PLAZA_Y
+    const steps = Math.max(12, Math.round(rise / 0.15))
+    const len = Math.hypot(s.dx, s.dz) || 1
+    const ux = s.dx / len
+    const uz = s.dz / len
     for (let i = 0; i < steps; i++) {
-      const t = (i + 0.5) / steps
-      const travel = (1 - t) * (rise + 0.4)
-      const x = run.x + run.dx * travel
-      const z = run.z + run.dz * travel
-      const y = STREET_Y - rise * t
-      group.add(
-        orientBox(run.width, 0.16, 0.45, x, y + 0.08, z, run.dx, run.dz),
+      const tStep = (i + 0.5) / steps
+      const along = tStep * s.run
+      const y = s.topY - rise * tStep
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.abs(ux) > 0.5 ? 0.3 : s.width,
+          0.13,
+          Math.abs(uz) > 0.5 ? 0.3 : s.width,
+        ),
+        granite,
       )
+      m.position.set(s.x + ux * along, y - 0.06, s.z + uz * along)
+      m.castShadow = true
+      m.receiveShadow = true
+      group.add(m)
     }
-  }
-
-  // Bollards on south sidewalk
-  for (let i = 0; i < 16; i++) {
-    const x = -14 + i * 1.9
-    const z = z1 + 1.4
-    const bollard = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.07, 0.08, 0.7, 8),
-      iron,
-    )
-    bollard.position.set(x, STREET_Y + 0.35, z)
-    bollard.castShadow = true
-    group.add(bollard)
   }
 
   scene.add(group)
