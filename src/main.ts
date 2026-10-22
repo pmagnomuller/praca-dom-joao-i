@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import { createAerialGround } from './aerial'
 import { createBuildings } from './buildings'
 import { MAP_RADIUS_M } from './config'
+import { createLandmarks } from './landmarks'
 import { fetchMapData } from './overpass'
+import { PLAZA_SPAWN, createSunkenPlaza } from './plaza'
 import { Player } from './player'
 import { createRoadsAndPlazas, type StreetLabel } from './roads'
 
@@ -147,6 +149,8 @@ function updateStreetLabel(dt: number): void {
 async function boot(): Promise<void> {
   try {
     await createAerialGround(scene, setStatus)
+    createSunkenPlaza(scene)
+
     const data = await fetchMapData(setStatus)
     setStatus(`Building city… ${data.buildings.length} buildings, ${data.roads.length} streets`)
 
@@ -155,9 +159,11 @@ async function boot(): Promise<void> {
     streetLabels = createRoadsAndPlazas(scene, data.roads, data.plazas)
     minimapRoads = data.roads.map((r) => r.points)
 
-    // Spawn south of plaza center; rotation.y = 0 looks north (−Z) toward Aliados / Rivoli
-    player.camera.position.set(5, 1.7, 28)
-    player.camera.rotation.set(0, 0, 0)
+    const anisotropy = renderer.capabilities.getMaxAnisotropy()
+    createLandmarks(scene, anisotropy)
+
+    // South rim spawn looking north (−Z) at Millennium across the sunken deck
+    player.spawnAt(PLAZA_SPAWN.x, PLAZA_SPAWN.z, PLAZA_SPAWN.yaw, PLAZA_SPAWN.pitch)
 
     setStatus('Ready — click below to walk the praça')
     startBtn.disabled = false

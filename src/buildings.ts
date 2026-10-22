@@ -6,6 +6,7 @@ import {
   MAX_BUILDING_HEIGHT,
 } from './config'
 import type { BuildingFeature, Vec2 } from './overpass'
+import { STREET_Y, plazaInterior } from './plaza'
 
 const PORTO_PALETTE = [
   0xe8dcc8, // warm plaster
@@ -137,6 +138,11 @@ export function createBuildings(
     }
     if (maxX0 - minX0 < 3 || maxZ0 - minZ0 < 3) continue
 
+    // Skip footprints wholly inside the sunken deck (we dress landmarks separately)
+    const cx0 = (minX0 + maxX0) / 2
+    const cz0 = (minZ0 + maxZ0) / 2
+    if (plazaInterior(cx0, cz0) > 0.5) continue
+
     const height = resolveHeight(b)
     const levels = Math.max(2, Math.round(height / DEFAULT_LEVEL_HEIGHT))
     const seed = hashId(b.id)
@@ -185,6 +191,7 @@ export function createBuildings(
       const near = Math.hypot(cx, cz) < 180
 
       const mesh = new THREE.Mesh(geo, wallMat)
+      mesh.position.y = STREET_Y
       mesh.castShadow = near
       mesh.receiveShadow = near
       mesh.userData.name = b.name
@@ -198,7 +205,7 @@ export function createBuildings(
           roofMat,
         )
         roof.rotation.x = -Math.PI / 2
-        roof.position.set(cx, height + 0.05, cz)
+        roof.position.set(cx, STREET_Y + height + 0.05, cz)
         roof.receiveShadow = true
         group.add(roof)
       }

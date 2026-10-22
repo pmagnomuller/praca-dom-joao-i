@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { MAP_RADIUS_M, ORIGIN } from './config'
 import { latLonToLocal, latLonToTile, tileBounds } from './geo'
+import { STREET_Y, openAerialOverDeck, plazaInterior } from './plaza'
 
 const ZOOM = 17
 
@@ -51,6 +52,8 @@ export async function createAerialGround(
 
       // Skip tiles entirely outside our interest radius (+ margin)
       if (Math.hypot(cx, cz) > MAP_RADIUS_M + 200) continue
+      // Leave a hole over the sunken granite deck
+      if (plazaInterior(cx, cz) > 0.5) continue
 
       tiles.push(
         (async () => {
@@ -64,7 +67,7 @@ export async function createAerialGround(
             })
             const mesh = new THREE.Mesh(geo, mat)
             mesh.rotation.x = -Math.PI / 2
-            mesh.position.set(cx, 0, cz)
+            mesh.position.set(cx, STREET_Y, cz)
             mesh.receiveShadow = true
             group.add(mesh)
           } catch {
@@ -76,7 +79,7 @@ export async function createAerialGround(
             })
             const mesh = new THREE.Mesh(geo, mat)
             mesh.rotation.x = -Math.PI / 2
-            mesh.position.set(cx, 0, cz)
+            mesh.position.set(cx, STREET_Y, cz)
             group.add(mesh)
           } finally {
             loaded++
@@ -90,6 +93,7 @@ export async function createAerialGround(
   }
 
   await Promise.all(tiles)
+  openAerialOverDeck(group)
   scene.add(group)
   return group
 }

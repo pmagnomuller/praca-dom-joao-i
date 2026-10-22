@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { PlazaFeature, RoadFeature, Vec2 } from './overpass'
+import { STREET_Y, plazaInterior } from './plaza'
 
 function ribbonGeometry(points: Vec2[], halfWidth: number): THREE.BufferGeometry | null {
   if (points.length < 2) return null
@@ -17,8 +18,8 @@ function ribbonGeometry(points: Vec2[], halfWidth: number): THREE.BufferGeometry
     const nx = -dz / len
     const nz = dx / len
     const p = points[i]
-    left.push(p.x + nx * halfWidth, 0.02, p.z + nz * halfWidth)
-    right.push(p.x - nx * halfWidth, 0.02, p.z - nz * halfWidth)
+    left.push(p.x + nx * halfWidth, STREET_Y + 0.02, p.z + nz * halfWidth)
+    right.push(p.x - nx * halfWidth, STREET_Y + 0.02, p.z - nz * halfWidth)
   }
 
   const verts: number[] = []
@@ -96,6 +97,19 @@ export function createRoadsAndPlazas(
   })
 
   for (const road of roads) {
+    const mid = road.points[Math.floor(road.points.length / 2)]
+    if (road.name && !seenNames.has(road.name)) {
+      seenNames.add(road.name)
+      labels.push({ name: road.name, x: mid.x, z: mid.z })
+    }
+
+    // Don't drape road overlays across the sunken deck hole
+    let inside = 0
+    for (const p of road.points) {
+      if (plazaInterior(p.x, p.z) > 0.5) inside++
+    }
+    if (inside > road.points.length * 0.4) continue
+
     const hw = road.width * 0.5
     const geo = ribbonGeometry(road.points, hw)
     if (!geo) continue
@@ -109,37 +123,34 @@ export function createRoadsAndPlazas(
     const mesh = new THREE.Mesh(geo, isPed ? sidewalk : asphalt)
     mesh.receiveShadow = true
     group.add(mesh)
-
-    if (road.name && !seenNames.has(road.name)) {
-      seenNames.add(road.name)
-      const mid = road.points[Math.floor(road.points.length / 2)]
-      labels.push({ name: road.name, x: mid.x, z: mid.z })
-    }
   }
 
   for (const plaza of plazas) {
     if (plaza.footprint.length < 4) continue
+    let cx = 0,
+      cz = 0
+    for (const p of plaza.footprint) {
+      cx += p.x
+      cz += p.z
+    }
+    cx /= plaza.footprint.length
+    cz /= plaza.footprint.length
+
+    // Label the praça but skip OSM floor mesh — sunken granite deck owns that space
+    if (plaza.name && !seenNames.has(plaza.name)) {
+      seenNames.add(plaza.name)
+      labels.push({ name: plaza.name, x: cx, z: cz })
+    }
+    if (plazaInterior(cx, cz) > 0.5) continue
+
     try {
       const shape = plazaShape(plaza.footprint)
       const geo = new THREE.ShapeGeometry(shape)
       geo.rotateX(-Math.PI / 2)
       const mesh = new THREE.Mesh(geo, plazaMat)
-      mesh.position.y = 0.03
+      mesh.position.y = STREET_Y + 0.03
       mesh.receiveShadow = true
       group.add(mesh)
-
-      if (plaza.name && !seenNames.has(plaza.name)) {
-        seenNames.add(plaza.name)
-        let cx = 0,
-          cz = 0
-        for (const p of plaza.footprint) {
-          cx += p.x
-          cz += p.z
-        }
-        cx /= plaza.footprint.length
-        cz /= plaza.footprint.length
-        labels.push({ name: plaza.name, x: cx, z: cz })
-      }
     } catch {
       // skip
     }

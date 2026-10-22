@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js'
 import { EYE_HEIGHT, RUN_SPEED, WALK_SPEED } from './config'
 import type { BuildingColliders } from './buildings'
+import { PLAZA_SPAWN, groundY } from './plaza'
 
 const PLAYER_RADIUS = 0.45
 
@@ -20,7 +21,7 @@ export class Player {
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     this.camera = camera
     this.controls = new PointerLockControls(camera, domElement)
-    camera.position.set(0, EYE_HEIGHT, 8)
+    this.spawnAt(PLAZA_SPAWN.x, PLAZA_SPAWN.z, PLAZA_SPAWN.yaw, PLAZA_SPAWN.pitch)
 
     const onKey = (e: KeyboardEvent, down: boolean) => {
       switch (e.code) {
@@ -53,6 +54,11 @@ export class Player {
 
   setColliders(boxes: BuildingColliders['boxes']): void {
     this.colliders = boxes
+  }
+
+  spawnAt(x: number, z: number, yaw = 0, pitch = 0): void {
+    this.camera.position.set(x, groundY(x, z) + EYE_HEIGHT, z)
+    this.camera.rotation.set(pitch, yaw, 0)
   }
 
   lock(): void {
@@ -113,7 +119,8 @@ export class Player {
     this.controls.moveRight(-this.velocity.x * dt)
     this.controls.moveForward(-this.velocity.z * dt)
 
-    this.camera.position.y = EYE_HEIGHT
     this.resolveCollision(this.camera.position)
+    const gy = groundY(this.camera.position.x, this.camera.position.z)
+    this.camera.position.y = gy + EYE_HEIGHT
   }
 }
